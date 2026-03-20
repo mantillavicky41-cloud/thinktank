@@ -1,0 +1,87 @@
+[
+  {
+    "name": "Council on Foreign Relations (CFR 外交关系委员会)",
+    "url": "https://www.cfr.org/feed",
+    "category": "顶级智库"
+  },
+  {
+    "name": "CSIS",
+    "url": "https://www.csis.org/rss.xml",
+    "category": "顶级智库"
+  },
+  {
+    "name": "RAND Corporation (兰德公司)",
+    "url": "https://www.rand.org/news/rss.xml",
+    "category": "顶级智库"
+  },
+  {
+    "name": "American Enterprise Institute (AEI)",
+    "url": "https://www.aei.org/feed/",
+    "category": "顶级智库"
+  },
+  {
+    "name": "Heritage Foundation (传统基金会)",
+    "url": "https://www.heritage.org/rss/",
+    "category": "顶级智库"
+  },
+  {
+    "name": "FPRI",
+    "url": "https://www.fpri.org/feed/",
+    "category": "顶级智库"
+  },
+  {
+    "name": "Cato Institute (卡托研究所，自由主义)",
+    "url": "https://www.cato.org/feed",
+    "category": "顶级智库"
+  },
+  {
+    "name": "Bruegel",
+    "url": "https://www.bruegel.org/rss.xml",
+    "category": "顶级智库"
+  },
+  {
+    "name": "IFRI",
+    "url": "https://www.ifri.org/en/rss.xml",
+    "category": "顶级智库"
+  },
+  {
+    "name": "ECFR",
+    "url": "https://ecfr.eu/feed/",
+    "category": "顶级智库"
+  },
+  {
+    "name": "German Marshall Fund",
+    "url": "https://www.gmfus.org/rss.xml",
+    "category": "顶级智库"
+  },
+  {
+    "name": "Clingendael Institute",
+    "url": "https://www.clingendael.org/rss.xml",
+    "category": "顶级智库"
+  },
+  {
+    "name": "Al Jazeera Centre for Studies",
+    "url": "https://studies.aljazeera.net/rss.xml",
+    "category": "重要智库"
+  },
+  {
+    "name": "BESA Center",
+    "url": "https://besacenter.org/feed/",
+    "category": "重要智库"
+  },
+  {
+    "name": "BESA Center",
+    "url": "https://besacenter.org/feed",
+    "category": "重要智库"
+  },
+  {
+    "name": "TIMEP",
+    "url": "https://timep.org/feed/",
+    "category": "重要智库"
+  },
+  {
+    "name": "Global Taiwan Institute (GTI)",
+    "url": "https://globaltaiwan.org/feed/",
+    "category": "重点院校"
+  }
+]
