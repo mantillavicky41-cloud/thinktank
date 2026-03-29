@@ -12,3 +12,5 @@ wheels/
 # Environment and data
 .env
 data/
+
+CLAUDE.md
