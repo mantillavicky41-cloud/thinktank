@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from google import genai
 
 from fetcher import RawArticle
+from reporter import TranslationStats
 
 logger = logging.getLogger(__name__)
 
@@ -138,10 +139,11 @@ def translate_articles(
     articles: list[RawArticle],
     api_key: str,
     model: str = "gemini-2.5-flash-lite",
-) -> list[TranslatedArticle]:
-    """Translate a list of articles, returns TranslatedArticle list."""
+) -> tuple[list[TranslatedArticle], TranslationStats]:
+    """Translate a list of articles. Returns (translated, stats)."""
+    stats = TranslationStats()
     if not articles:
-        return []
+        return [], stats
 
     client = genai.Client(api_key=api_key)
     translated: list[TranslatedArticle] = []
@@ -158,6 +160,7 @@ def translate_articles(
         all_chinese = all(_is_chinese(a.title) for a in batch)
 
         if all_chinese:
+            stats.batch_total += 1
             for a in batch:
                 translated.append(
                     TranslatedArticle(
@@ -172,12 +175,14 @@ def translate_articles(
             continue
 
         # Try batch translation with retry
+        stats.batch_total += 1
         prompt = _build_prompt(batch)
         response_text = _call_llm_with_retry(client, model, prompt)
 
         if response_text:
             results = _parse_response(response_text, len(batch))
         else:
+            stats.batch_failed += 1
             logger.warning("Batch translation failed after retries, falling back to individual translation")
             results = [{}] * len(batch)
 
@@ -187,8 +192,11 @@ def translate_articles(
             # If this article has no translation, try individual fallback
             if not r.get("title_zh") and not _is_chinese(a.title):
                 logger.info("Trying individual translation for: %s", a.title[:60])
+                stats.fallback_used += 1
                 time.sleep(_INTER_BATCH_DELAY)
                 r = _translate_single(client, model, a)
+                if not r.get("title_zh"):
+                    stats.fallback_failed += 1
 
             title_zh = r.get("title_zh", "") or a.title
             summary_zh = r.get("summary_zh", "") or a.summary
@@ -210,7 +218,7 @@ def translate_articles(
             )
 
     logger.info("Translated %d articles", len(translated))
-    return translated
+    return translated, stats
 
 
 def _is_chinese(text: str) -> bool:

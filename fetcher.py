@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -12,6 +13,7 @@ import feedparser
 import httpx
 
 from config import RSSFeed
+from reporter import FeedStat
 
 logger = logging.getLogger(__name__)
 
@@ -78,8 +80,13 @@ def _clean_summary(raw: str) -> str:
 async def fetch_feed(
     client: httpx.AsyncClient,
     feed: RSSFeed,
-) -> list[RawArticle]:
-    """Fetch and parse a single RSS feed. Returns [] on failure."""
+) -> tuple[list[RawArticle], FeedStat]:
+    """Fetch and parse a single RSS feed.
+
+    Returns a tuple of (articles, stat). On failure, articles is [] and
+    stat.error is a short error string.
+    """
+    t0 = time.monotonic()
     try:
         resp = await client.get(feed.url, follow_redirects=True)
         resp.raise_for_status()
@@ -90,14 +97,14 @@ async def fetch_feed(
             link = entry.get("link", "").strip()
             if not title or not link:
                 continue
-            
+
             # Prioritize 'content' (often contains full text) over 'summary' or 'description'
             content_value = ""
             if "content" in entry and isinstance(entry.content, list) and len(entry.content) > 0:
                 content_value = entry.content[0].get("value", "")
-            
+
             summary_raw = content_value or entry.get("summary", "") or entry.get("description", "") or ""
-            
+
             articles.append(
                 RawArticle(
                     source=feed.name,
@@ -108,26 +115,47 @@ async def fetch_feed(
                     published_at=_parse_pub_date(entry),
                 )
             )
+        duration_ms = int((time.monotonic() - t0) * 1000)
         logger.info("Fetched %d articles from %s", len(articles), feed.name)
-        return articles
-    except Exception:
+        return articles, FeedStat(
+            name=feed.name,
+            category=feed.category,
+            article_count=len(articles),
+            duration_ms=duration_ms,
+            error=None,
+        )
+    except Exception as e:
+        duration_ms = int((time.monotonic() - t0) * 1000)
         logger.warning("Failed to fetch feed %s (%s)", feed.name, feed.url, exc_info=True)
-        return []
+        return [], FeedStat(
+            name=feed.name,
+            category=feed.category,
+            article_count=0,
+            duration_ms=duration_ms,
+            error=f"{type(e).__name__}: {e}"[:200],
+        )
 
 
-async def fetch_all_feeds(feeds: list[RSSFeed]) -> list[RawArticle]:
-    """Fetch all RSS feeds concurrently and return a merged list."""
+async def fetch_all_feeds(
+    feeds: list[RSSFeed],
+) -> tuple[list[RawArticle], list[FeedStat]]:
+    """Fetch all RSS feeds concurrently.
+
+    Returns (all_articles_sorted, per_feed_stats).
+    """
     async with httpx.AsyncClient(timeout=_TIMEOUT, headers=_HEADERS) as client:
         tasks = [fetch_feed(client, f) for f in feeds]
         results = await asyncio.gather(*tasks)
 
     all_articles: list[RawArticle] = []
-    for batch in results:
+    stats: list[FeedStat] = []
+    for batch, stat in results:
         all_articles.extend(batch)
+        stats.append(stat)
 
     # Sort by published_at descending (newest first), unknowns at end
     all_articles.sort(
         key=lambda a: a.published_at or "0000-00-00 00:00", reverse=True
     )
     logger.info("Total articles fetched: %d", len(all_articles))
-    return all_articles
+    return all_articles, stats
