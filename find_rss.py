@@ -1,7 +1,7 @@
 """
 RSS Feed Discovery Script
 
-Reads 智库及高校名单.xlsx, probes common RSS URL patterns for each organization,
+Reads 智库及高校名单.xlsx, discovers RSS/Atom feeds for each organization,
 verifies which ones return valid feeds, and writes the results to rss_feeds_found.json.
 
 Usage:
@@ -13,12 +13,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
+from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import urljoin, urlparse
 
 import feedparser
 import httpx
-import openpyxl
+
+from source_registry import EXCEL_FILE, load_orgs_from_excel
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,7 +28,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-EXCEL_FILE = "智库及高校名单.xlsx"
 OUTPUT_FILE = "rss_feeds_found.json"
 
 _TIMEOUT = httpx.Timeout(25.0, connect=10.0)
@@ -39,6 +40,8 @@ _HEADERS = {
     "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
     "Accept-Language": "en-US,en;q=0.9",
 }
+
+_FEED_HINTS = ("rss", "feed", "atom", "xml")
 
 # Common RSS path suffixes to try for each domain
 RSS_SUFFIXES = [
@@ -208,30 +211,53 @@ KNOWN_FEEDS: dict[str, list[dict]] = {
 }
 
 
+class _FeedLinkParser(HTMLParser):
+    """Collect feed candidates declared in HTML."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.alternates: list[str] = []
+        self.anchors: list[str] = []
+        self._anchor_href: str | None = None
+        self._anchor_text: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        attr_map = {str(k).lower(): str(v) for k, v in attrs}
+        if tag == "link":
+            href = attr_map.get("href", "").strip()
+            rel = attr_map.get("rel", "").lower()
+            mime = attr_map.get("type", "").lower()
+            if href and "alternate" in rel and any(hint in mime for hint in _FEED_HINTS):
+                self.alternates.append(href)
+            return
+
+        if tag == "a":
+            self._anchor_href = attr_map.get("href", "").strip()
+            self._anchor_text = []
+
+    def handle_data(self, data: str) -> None:
+        if self._anchor_href:
+            self._anchor_text.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag != "a" or not self._anchor_href:
+            return
+
+        text = " ".join(part.strip() for part in self._anchor_text).strip().lower()
+        href = self._anchor_href
+        if any(hint in href.lower() for hint in _FEED_HINTS) or any(
+            hint in text for hint in _FEED_HINTS
+        ):
+            self.anchors.append(href)
+
+        self._anchor_href = None
+        self._anchor_text = []
+
+
 def _extract_domain(url: str) -> str:
     """Extract the main domain from a URL."""
-    match = re.search(r"https?://(?:www\.)?([^/]+)", url)
-    return match.group(1) if match else url
-
-
-def _load_orgs_from_excel(path: str) -> list[dict]:
-    """Parse the Excel sheet and return a list of org dicts."""
-    wb = openpyxl.load_workbook(path)
-    ws = wb["Sheet1"]
-    orgs = []
-    for i, row in enumerate(ws.iter_rows(values_only=True)):
-        if i == 0:  # skip header
-            continue
-        region, org_type, name, website = (row[j] for j in range(4))
-        if not name or not website:
-            continue
-        orgs.append({
-            "region": region or "",
-            "type": org_type or "",
-            "name": str(name).strip(),
-            "website": str(website).strip().rstrip("/"),
-        })
-    return orgs
+    parsed = urlparse(url)
+    return (parsed.netloc or parsed.path).removeprefix("www.")
 
 
 async def _verify_rss(client: httpx.AsyncClient, url: str) -> bool:
@@ -252,34 +278,90 @@ async def _verify_rss(client: httpx.AsyncClient, url: str) -> bool:
         return False
 
 
+async def _discover_feed_links(client: httpx.AsyncClient, url: str) -> list[str]:
+    """Inspect HTML for declared or linked RSS/Atom feeds."""
+    try:
+        resp = await client.get(url, follow_redirects=True)
+        if resp.status_code != 200:
+            return []
+
+        content_type = resp.headers.get("content-type", "").lower()
+        if "html" not in content_type and "<html" not in resp.text.lower():
+            return []
+
+        parser = _FeedLinkParser()
+        parser.feed(resp.text)
+
+        candidates: list[str] = []
+        seen: set[str] = set()
+        for href in [*parser.alternates, *parser.anchors]:
+            absolute = urljoin(str(resp.url), href)
+            if absolute in seen:
+                continue
+            seen.add(absolute)
+            candidates.append(absolute)
+        return candidates
+    except Exception:
+        return []
+
+
+async def _verify_candidates(
+    client: httpx.AsyncClient,
+    org: dict,
+    candidates: list[str],
+) -> list[dict]:
+    """Verify candidate URLs and normalize matching feeds."""
+    verified: list[dict] = []
+    seen: set[str] = set()
+    for url in candidates:
+        if url in seen:
+            continue
+        seen.add(url)
+
+        ok = await _verify_rss(client, url)
+        status = "✓" if ok else "✗"
+        logger.info("[%s] %s %s", status, org["name"], url)
+        if ok:
+            verified.append(
+                {
+                    "name": org["name"],
+                    "url": url,
+                    "category": org["type"],
+                }
+            )
+    return verified
+
+
 async def _probe_feeds(
     client: httpx.AsyncClient,
     org: dict,
 ) -> list[dict]:
-    """Try known feeds first, then probe common RSS suffixes."""
+    """Try known feeds, HTML autodiscovery, then common RSS suffixes."""
     website = org["website"]
     domain = _extract_domain(website)
 
     # Check hard-coded known feeds
     for key, feeds in KNOWN_FEEDS.items():
         if domain.endswith(key) or key in domain:
-            verified = []
-            for f in feeds:
-                ok = await _verify_rss(client, f["url"])
-                status = "✓" if ok else "✗"
-                logger.info("[%s] %s %s", status, org["name"], f["url"])
-                if ok:
-                    verified.append(f)
+            verified = await _verify_candidates(
+                client,
+                org,
+                [f["url"] for f in feeds],
+            )
             if verified:
                 return verified
-            break  # known but not verified; fall through to probing
+            break
+
+    discovered = await _discover_feed_links(client, website)
+    verified = await _verify_candidates(client, org, discovered)
+    if verified:
+        return verified
 
     # Probe common suffixes
-    for suffix in RSS_SUFFIXES:
-        url = f"{website}{suffix}"
-        if await _verify_rss(client, url):
-            logger.info("[✓] %s %s", org["name"], url)
-            return [{"name": org["name"], "url": url, "category": org["type"]}]
+    probe_urls = [f"{website}{suffix}" for suffix in RSS_SUFFIXES]
+    verified = await _verify_candidates(client, org, probe_urls)
+    if verified:
+        return verified
 
     logger.warning("[✗] No RSS found for %s (%s)", org["name"], website)
     return []
@@ -299,17 +381,21 @@ async def discover_all_feeds(orgs: list[dict]) -> list[dict]:
 
 
 def main() -> None:
-    orgs = _load_orgs_from_excel(EXCEL_FILE)
+    orgs = load_orgs_from_excel(EXCEL_FILE)
     logger.info("Loaded %d organizations from Excel", len(orgs))
 
     feeds = asyncio.run(discover_all_feeds(orgs))
     logger.info("Discovered %d working RSS feeds", len(feeds))
 
-    # Deduplicate by URL
+    # Deduplicate by organization first, then by URL
+    seen_names: set[str] = set()
     seen_urls: set[str] = set()
     unique_feeds = []
     for f in feeds:
+        if f["name"] in seen_names:
+            continue
         if f["url"] not in seen_urls:
+            seen_names.add(f["name"])
             seen_urls.add(f["url"])
             unique_feeds.append(f)
 

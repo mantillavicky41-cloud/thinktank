@@ -1,6 +1,6 @@
-"""Think Tank RSS Monitor — Main entry point.
+"""Think Tank source monitor — Main entry point.
 
-Fetches RSS feeds from think tanks/universities every hour,
+Fetches RSS or HTML sources from think tanks/universities every hour,
 saves all articles to SQLite, and pushes Taiwan-related articles
 to DingTalk after LLM formatting.
 """
@@ -104,7 +104,7 @@ def _translate_and_push(
 def run_job() -> None:
     """Execute one fetch-store-filter-push cycle.
 
-    1. Fetch all think tank RSS feeds.
+    1. Fetch all configured think tank sources.
     2. Save every new article to the database.
     3. Filter articles mentioning Taiwan (台湾/taiwan).
     4. Use LLM to format Taiwan articles as title+summary+time+source.
@@ -116,7 +116,7 @@ def run_job() -> None:
     reporter.start()
 
     try:
-        logger.info("=== Starting RSS fetch cycle ===")
+        logger.info("=== Starting source fetch cycle ===")
         articles, feed_stats = asyncio.run(fetch_all_feeds(settings.rss_feeds))
         reporter.record_feeds(feed_stats)
 
@@ -201,9 +201,9 @@ def main() -> None:
     settings = get_settings()
     setup_logging(settings.log_level)
 
-    logger.info("Think Tank RSS Monitor starting...")
+    logger.info("Think Tank source monitor starting...")
     logger.info("Push schedule: every hour on the hour")
-    logger.info("RSS feeds configured: %d", len(settings.rss_feeds))
+    logger.info("Sources configured: %d", len(settings.rss_feeds))
 
     if not settings.dingtalk_webhook_url:
         logger.error("DINGTALK_WEBHOOK_URL is not set!")

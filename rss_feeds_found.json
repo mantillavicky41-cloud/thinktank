@@ -1,11 +1,11 @@
 [
   {
     "name": "Council on Foreign Relations (CFR 外交关系委员会)",
-    "url": "https://www.cfr.org/feed",
+    "url": "https://www.cfr.org/feed/",
     "category": "顶级智库"
   },
   {
-    "name": "CSIS",
+    "name": "Center for Strategic and International Studies (CSIS 战略与国际研究中心)",
     "url": "https://www.csis.org/rss.xml",
     "category": "顶级智库"
   },
@@ -15,72 +15,72 @@
     "category": "顶级智库"
   },
   {
-    "name": "American Enterprise Institute (AEI)",
+    "name": "American Enterprise Institute (AEI 美国企业研究所)",
     "url": "https://www.aei.org/feed/",
     "category": "顶级智库"
   },
   {
     "name": "Heritage Foundation (传统基金会)",
-    "url": "https://www.heritage.org/rss/",
+    "url": "https://www.heritage.org/rss",
     "category": "顶级智库"
   },
   {
-    "name": "FPRI",
+    "name": "Foreign Policy Research Institute (FPRI)",
     "url": "https://www.fpri.org/feed/",
     "category": "顶级智库"
   },
   {
     "name": "Cato Institute (卡托研究所，自由主义)",
-    "url": "https://www.cato.org/feed",
+    "url": "https://feeds.cato.org/CatoRecentOpeds",
     "category": "顶级智库"
   },
   {
-    "name": "Bruegel",
+    "name": "Bruegel (布鲁盖尔，欧盟经济政策，布鲁塞尔)",
     "url": "https://www.bruegel.org/rss.xml",
     "category": "顶级智库"
   },
   {
-    "name": "IFRI",
-    "url": "https://www.ifri.org/en/rss.xml",
+    "name": "French Institute of International Relations (IFRI 法国国际关系研究所)",
+    "url": "https://www.ifri.org/rss.xml",
     "category": "顶级智库"
   },
   {
-    "name": "ECFR",
+    "name": "European Council on Foreign Relations (ECFR 欧洲对外关系委员会)",
     "url": "https://ecfr.eu/feed/",
     "category": "顶级智库"
   },
   {
-    "name": "German Marshall Fund",
+    "name": "German Marshall Fund of the United States (GMF 德国马歇尔基金会，欧洲分支强)",
     "url": "https://www.gmfus.org/rss.xml",
     "category": "顶级智库"
   },
   {
-    "name": "Clingendael Institute",
+    "name": "Clingendael Institute (荷兰国际关系研究所)",
     "url": "https://www.clingendael.org/rss.xml",
     "category": "顶级智库"
   },
   {
-    "name": "Al Jazeera Centre for Studies",
+    "name": "Al Jazeera Centre for Studies (半岛电视台研究中心)",
     "url": "https://studies.aljazeera.net/rss.xml",
     "category": "重要智库"
   },
   {
-    "name": "BESA Center",
+    "name": "Begin-Sadat Center for Strategic Studies (BESA 巴伊兰-萨达特战略研究中心，以色列)",
     "url": "https://besacenter.org/feed/",
     "category": "重要智库"
   },
   {
-    "name": "BESA Center",
-    "url": "https://besacenter.org/feed",
-    "category": "重要智库"
-  },
-  {
-    "name": "TIMEP",
+    "name": "Tahrir Institute for Middle East Policy (TIMEP，中东政策解放研究所)",
     "url": "https://timep.org/feed/",
     "category": "重要智库"
   },
   {
-    "name": "Global Taiwan Institute (GTI)",
+    "name": "Sigur Center (西格尔东亚研究中心，乔治·华盛顿大学)",
+    "url": "https://terp.elliott.gwu.edu/feed/",
+    "category": "重点院校"
+  },
+  {
+    "name": "Global Taiwan Institute (GTI，由马里兰大学等合作支持)",
     "url": "https://globaltaiwan.org/feed/",
     "category": "重点院校"
   }

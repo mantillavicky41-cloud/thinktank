@@ -3,109 +3,22 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
+from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from source_registry import build_default_source_dicts
 
 
 class RSSFeed(BaseModel):
-    """A single RSS feed source."""
+    """A monitorable source, backed by RSS or HTML extraction."""
 
     name: str
     url: str
     category: str = "综合"
-
-
-# ---------- Think Tank & University RSS Feeds ----------
-# Discovered from 智库及高校名单.xlsx via find_rss.py
-
-THINKTANK_FEEDS: list[dict[str, str]] = [
-    # ---- 美国顶级智库 ----
-    {
-        "name": "Council on Foreign Relations (CFR)",
-        "url": "https://www.cfr.org/feed",
-        "category": "顶级智库-美国",
-    },
-    {
-        "name": "CSIS (Center for Strategic and International Studies)",
-        "url": "https://www.csis.org/rss.xml",
-        "category": "顶级智库-美国",
-    },
-    {
-        "name": "RAND Corporation",
-        "url": "https://www.rand.org/news/rss.xml",
-        "category": "顶级智库-美国",
-    },
-    {
-        "name": "American Enterprise Institute (AEI)",
-        "url": "https://www.aei.org/feed/",
-        "category": "顶级智库-美国",
-    },
-    {
-        "name": "Heritage Foundation",
-        "url": "https://www.heritage.org/rss/",
-        "category": "顶级智库-美国",
-    },
-    {
-        "name": "Foreign Policy Research Institute (FPRI)",
-        "url": "https://www.fpri.org/feed/",
-        "category": "顶级智库-美国",
-    },
-    {
-        "name": "Cato Institute",
-        "url": "https://www.cato.org/feed",
-        "category": "顶级智库-美国",
-    },
-    # ---- 欧洲顶级智库 ----
-    {
-        "name": "Bruegel",
-        "url": "https://www.bruegel.org/rss.xml",
-        "category": "顶级智库-欧洲",
-    },
-    {
-        "name": "IFRI (French Institute of International Relations)",
-        "url": "https://www.ifri.org/en/rss.xml",
-        "category": "顶级智库-欧洲",
-    },
-    {
-        "name": "ECFR (European Council on Foreign Relations)",
-        "url": "https://ecfr.eu/feed/",
-        "category": "顶级智库-欧洲",
-    },
-    {
-        "name": "German Marshall Fund (GMF)",
-        "url": "https://www.gmfus.org/rss.xml",
-        "category": "顶级智库-欧洲",
-    },
-    {
-        "name": "Clingendael Institute",
-        "url": "https://www.clingendael.org/rss.xml",
-        "category": "顶级智库-欧洲",
-    },
-    # ---- 中东重要智库 ----
-    {
-        "name": "Al Jazeera Centre for Studies",
-        "url": "https://studies.aljazeera.net/rss.xml",
-        "category": "重要智库-中东",
-    },
-    {
-        "name": "BESA Center for Strategic Studies",
-        "url": "https://besacenter.org/feed/",
-        "category": "重要智库-中东",
-    },
-    {
-        "name": "TIMEP (Tahrir Institute for Middle East Policy)",
-        "url": "https://timep.org/feed/",
-        "category": "重要智库-中东",
-    },
-    # ---- 重点院校 ----
-    {
-        "name": "Global Taiwan Institute (GTI)",
-        "url": "https://globaltaiwan.org/feed/",
-        "category": "重点院校",
-    },
-]
+    kind: Literal["rss", "html"] = "rss"
+    site_url: str = ""
 
 
 class Settings(BaseSettings):
@@ -135,8 +48,10 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
 
-    # RSS Feeds — loaded from THINKTANK_FEEDS by default
-    rss_feeds: list[RSSFeed] = [RSSFeed(**f) for f in THINKTANK_FEEDS]
+    # Monitor sources — loaded from the spreadsheet, with RSS overlays when found
+    rss_feeds: list[RSSFeed] = Field(
+        default_factory=lambda: [RSSFeed(**f) for f in build_default_source_dicts()]
+    )
 
 
 _settings: Settings | None = None
