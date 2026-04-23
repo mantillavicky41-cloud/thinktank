@@ -18,6 +18,7 @@ from pathlib import Path
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 from config import get_settings, setup_logging
+from feishu_notifier import build_interactive_cards, send_to_feishu
 from fetcher import RawArticle, fetch_all_feeds
 from notifier import build_markdown_message, send_to_dingtalk
 from reporter import CycleReporter
@@ -59,20 +60,42 @@ def _translate_and_push(
     )
     reporter.record_translation(trans_stats)
 
-    messages, titles_per_msg = build_markdown_message(translated, section_title=label)
+    dd_payloads, dd_titles = build_markdown_message(translated, section_title=label)
+    fs_cards, fs_titles = build_interactive_cards(translated, section_title=label)
+
     logger.info(
-        "[%s] Pushing %d articles in %d message(s)",
-        label, len(translated), len(messages),
+        "[%s] Pushing %d articles via DingTalk (%d msg) + Feishu (%d msg)",
+        label, len(translated), len(dd_payloads), len(fs_cards),
     )
-    push_results = asyncio.run(
-        send_to_dingtalk(
-            settings.dingtalk_webhook_url,
-            settings.dingtalk_webhook_secret,
-            messages,
-            titles_per_msg,
+
+    async def _send_both():
+        return await asyncio.gather(
+            send_to_dingtalk(
+                settings.dingtalk_webhook_url,
+                settings.dingtalk_webhook_secret,
+                dd_payloads, dd_titles,
+            ),
+            send_to_feishu(
+                settings.feishu_webhook_url,
+                settings.feishu_webhook_secret,
+                fs_cards, fs_titles,
+            ),
+            return_exceptions=True,
         )
-    )
-    reporter.record_push(push_results)
+
+    dd_result, fs_result = asyncio.run(_send_both())
+
+    if isinstance(dd_result, BaseException):
+        reporter.record_error("dingtalk_push", dd_result)
+        logger.exception("DingTalk push crashed", exc_info=dd_result)
+    else:
+        reporter.record_push(dd_result)
+
+    if isinstance(fs_result, BaseException):
+        reporter.record_error("feishu_push", fs_result)
+        logger.exception("Feishu push crashed", exc_info=fs_result)
+    else:
+        reporter.record_push(fs_result)
 
     storage.mark_pushed(article_ids)
     return len(translated)
@@ -187,6 +210,12 @@ def main() -> None:
         sys.exit(1)
     if not settings.dingtalk_webhook_secret:
         logger.error("DINGTALK_WEBHOOK_SECRET is not set!")
+        sys.exit(1)
+    if not settings.feishu_webhook_url:
+        logger.error("FEISHU_WEBHOOK_URL is not set!")
+        sys.exit(1)
+    if not settings.feishu_webhook_secret:
+        logger.error("FEISHU_WEBHOOK_SECRET is not set!")
         sys.exit(1)
     if not settings.gemini_api_key:
         logger.error("GEMINI_API_KEY is not set!")

@@ -62,13 +62,25 @@ class TranslationStats:
 @dataclass
 class PushResult:
     index: int            # 1-based message index within this cycle
-    total: int            # total messages in this cycle
+    total: int            # total messages for this platform
     payload_len: int      # markdown text character count
     errcode: int
     errmsg: str
     response_raw: str     # full response body
+    platform: str = "dingtalk"  # "dingtalk" | "feishu"
     sensitive_hits: dict[str, int] = field(default_factory=dict)
     article_titles: list[str] = field(default_factory=list)  # title_zh list
+
+
+_PLATFORM_LABEL = {
+    "dingtalk": "钉钉",
+    "feishu": "飞书",
+}
+
+_PLATFORM_CODE_LABEL = {
+    "dingtalk": "errcode",
+    "feishu": "code",
+}
 
 
 # ---------- Reporter ----------
@@ -115,7 +127,8 @@ class CycleReporter:
         self._translation = stats
 
     def record_push(self, results: list[PushResult]) -> None:
-        self._pushes = list(results)
+        """Append push results. Can be called multiple times (one per platform)."""
+        self._pushes.extend(results)
 
     def record_error(self, stage: str, err: BaseException) -> None:
         self._errors.append((stage, f"{type(err).__name__}: {err}"))
@@ -148,15 +161,19 @@ class CycleReporter:
 
         push_lines: list[str] = []
         if self._pushes:
-            for p in self._pushes:
-                hits = (
-                    ", ".join(f"{w}×{c}" for w, c in p.sensitive_hits.items())
-                    if p.sensitive_hits else "-"
-                )
-                push_lines.append(
-                    f"    msg {p.index}/{p.total}: {p.payload_len} chars, "
-                    f"errcode={p.errcode}, errmsg={p.errmsg!r}, sensitive=[{hits}]"
-                )
+            by_platform = self._pushes_by_platform()
+            for platform, results in by_platform.items():
+                label = _PLATFORM_LABEL.get(platform, platform)
+                code_key = _PLATFORM_CODE_LABEL.get(platform, "code")
+                for p in results:
+                    hits = (
+                        ", ".join(f"{w}×{c}" for w, c in p.sensitive_hits.items())
+                        if p.sensitive_hits else "-"
+                    )
+                    push_lines.append(
+                        f"    [{label}] msg {p.index}/{p.total}: {p.payload_len} chars, "
+                        f"{code_key}={p.errcode}, msg={p.errmsg!r}, sensitive=[{hits}]"
+                    )
         else:
             push_lines.append("    (no push this cycle)")
 
@@ -171,7 +188,7 @@ class CycleReporter:
             f" ({self._translation.batch_failed} failed),"
             f" fallback {self._translation.fallback_used}"
             f" ({self._translation.fallback_failed} failed)",
-            f"  DingTalk:",
+            f"  Push:",
             *push_lines,
         ]
         if self._errors:
@@ -180,6 +197,13 @@ class CycleReporter:
                 lines.append(f"    [{stage}] {msg}")
 
         logger.info("\n".join(lines))
+
+    def _pushes_by_platform(self) -> dict[str, list[PushResult]]:
+        """Group pushes by platform, preserving encounter order."""
+        grouped: dict[str, list[PushResult]] = {}
+        for p in self._pushes:
+            grouped.setdefault(p.platform, []).append(p)
+        return grouped
 
     def _append_markdown(
         self,
@@ -279,38 +303,43 @@ class CycleReporter:
         )
         out.append("")
 
-        # Push
-        out.append("### 钉钉推送")
-        out.append("")
+        # Push — grouped by platform so both channels can be diffed side-by-side
         if self._pushes:
-            for p in self._pushes:
-                out.append(
-                    f"**消息 {p.index}/{p.total}** — {p.payload_len} 字 — "
-                    f"`errcode={p.errcode} errmsg={p.errmsg}`"
-                )
-                if p.article_titles:
-                    preview = "、".join(p.article_titles[:5])
-                    if len(p.article_titles) > 5:
-                        preview += f"（共 {len(p.article_titles)} 篇）"
-                    out.append(f"- 文章：{preview}")
-                if p.sensitive_hits:
-                    hits = "、".join(
-                        f"`{w} ×{c}`" for w, c in p.sensitive_hits.items()
-                    )
-                    out.append(f"- 敏感词命中：{hits}")
-                else:
-                    out.append("- 敏感词命中：无")
-                # Truncate extremely long response bodies
-                resp = p.response_raw or ""
-                if len(resp) > 500:
-                    resp = resp[:500] + "...(truncated)"
-                out.append(f"- 响应：`{resp}`")
+            by_platform = self._pushes_by_platform()
+            for platform, results in by_platform.items():
+                label = _PLATFORM_LABEL.get(platform, platform)
+                code_key = _PLATFORM_CODE_LABEL.get(platform, "code")
+                out.append(f"### {label}推送")
                 out.append("")
+                for p in results:
+                    out.append(
+                        f"**消息 {p.index}/{p.total}** — {p.payload_len} 字 — "
+                        f"`{code_key}={p.errcode} msg={p.errmsg}`"
+                    )
+                    if p.article_titles:
+                        preview = "、".join(p.article_titles[:5])
+                        if len(p.article_titles) > 5:
+                            preview += f"（共 {len(p.article_titles)} 篇）"
+                        out.append(f"- 文章：{preview}")
+                    if p.sensitive_hits:
+                        hits = "、".join(
+                            f"`{w} ×{c}`" for w, c in p.sensitive_hits.items()
+                        )
+                        out.append(f"- 敏感词命中：{hits}")
+                    else:
+                        out.append("- 敏感词命中：无")
+                    resp = p.response_raw or ""
+                    if len(resp) > 500:
+                        resp = resp[:500] + "...(truncated)"
+                    out.append(f"- 响应：`{resp}`")
+                    out.append("")
             out.append(
-                "> ⚠️ 钉钉可能静默改写敏感词但仍返回 errcode=0，"
-                "如命中较多请对照手机 App 实际内容核对。"
+                "> ⚠️ 平台可能静默改写/截断敏感词但仍返回成功码，"
+                "如命中较多请对照手机 App 两端实际显示内容核对。"
             )
         else:
+            out.append("### 推送")
+            out.append("")
             out.append("（本轮无推送）")
         out.append("")
 

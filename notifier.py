@@ -36,24 +36,28 @@ def _sign(secret: str) -> tuple[str, str]:
     return timestamp, sign
 
 
-def build_markdown_message(
+def _now_cn_str() -> str:
+    from datetime import datetime, timezone, timedelta
+    tz_cn = timezone(timedelta(hours=8))
+    return datetime.now(tz_cn).strftime("%Y-%m-%d %H:%M")
+
+
+def split_markdown_segments(
     articles: list[TranslatedArticle],
     section_title: str = "国际媒体快讯",
-) -> tuple[list[dict], list[list[str]]]:
-    """Build one or more DingTalk Markdown message payloads.
+    now_str: str | None = None,
+) -> list[tuple[str, list[str]]]:
+    """Split articles into one-or-more Markdown text segments.
 
-    Returns (payloads, titles_per_message) — titles_per_message[i] is the list
-    of article title_zh included in payloads[i].
+    Returns [(text, titles), ...] where each text fits within _MAX_MSG_LEN.
+    Reused by both DingTalk (notifier.py) and Feishu (feishu_notifier.py)
+    so that both platforms receive identical content for fair A/B comparison.
     """
-    from datetime import datetime, timezone, timedelta
-
-    tz_cn = timezone(timedelta(hours=8))
-    now_str = datetime.now(tz_cn).strftime("%Y-%m-%d %H:%M")
-
+    if now_str is None:
+        now_str = _now_cn_str()
     header = f"### 📰 {section_title} ({now_str})\n\n"
 
-    messages: list[dict] = []
-    titles_per_msg: list[list[str]] = []
+    segments: list[tuple[str, list[str]]] = []
     current_text = header
     current_titles: list[str] = []
 
@@ -67,21 +71,34 @@ def build_markdown_message(
             f"---\n\n"
         )
 
-        # If adding this entry would exceed the limit, flush current
         if len(current_text) + len(entry) > _MAX_MSG_LEN and current_titles:
-            messages.append(_mk_payload(current_text, now_str, section_title))
-            titles_per_msg.append(current_titles)
-            current_text = header + f"*(续 第{len(messages)+1}部分)*\n\n"
+            segments.append((current_text, current_titles))
+            current_text = header + f"*(续 第{len(segments)+1}部分)*\n\n"
             current_titles = []
 
         current_text += entry
         current_titles.append(a.title_zh)
 
     if current_titles:
-        messages.append(_mk_payload(current_text, now_str, section_title))
-        titles_per_msg.append(current_titles)
+        segments.append((current_text, current_titles))
 
-    return messages, titles_per_msg
+    return segments
+
+
+def build_markdown_message(
+    articles: list[TranslatedArticle],
+    section_title: str = "国际媒体快讯",
+) -> tuple[list[dict], list[list[str]]]:
+    """Build DingTalk Markdown payloads + per-message title lists."""
+    now_str = _now_cn_str()
+    segments = split_markdown_segments(articles, section_title, now_str)
+
+    payloads: list[dict] = []
+    titles_per_msg: list[list[str]] = []
+    for text, titles in segments:
+        payloads.append(_mk_payload(text, now_str, section_title))
+        titles_per_msg.append(titles)
+    return payloads, titles_per_msg
 
 
 def _mk_payload(text: str, time_str: str, section_title: str = "国际媒体快讯") -> dict:
@@ -141,6 +158,7 @@ async def send_to_dingtalk(
 
             results.append(
                 PushResult(
+                    platform="dingtalk",
                     index=i,
                     total=total,
                     payload_len=len(payload_text),

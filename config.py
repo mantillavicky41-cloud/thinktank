@@ -121,6 +121,10 @@ class Settings(BaseSettings):
     dingtalk_webhook_url: str = ""
     dingtalk_webhook_secret: str = ""
 
+    # Feishu (Lark)
+    feishu_webhook_url: str = ""
+    feishu_webhook_secret: str = ""
+
     # Gemini
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.0-flash"
